@@ -3,16 +3,16 @@ import pandas as pd
 import yfinance as yf
 import tensorflow as tf
 import random
+import os
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 from pyswarm import pso
 from sklearn.preprocessing import MinMaxScaler
-
 from supabase import create_client
 
 # ===============================
-# STABILITY (VERY IMPORTANT)
+# STABILITY
 # ===============================
 SEED = 42
 np.random.seed(SEED)
@@ -20,23 +20,20 @@ tf.random.set_seed(SEED)
 random.seed(SEED)
 
 # ===============================
-# INIT APP
+# SUPABASE CONFIG
 # ===============================
-app = FastAPI()
-
-# ===============================
-# SUPABASE SETUP
-# ===============================
-SUPABASE_URL = "YOUR_SUPABASE_URL"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY"
+SUPABASE_URL = "https://doxrtdhgkxzihwkjsduc.supabase.co"
+SUPABASE_KEY = "YOUR_NEW_ANON_KEY"   # ⚠️ replace with regenerated key
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ===============================
-# REQUEST MODEL
+# FASTAPI
 # ===============================
+app = FastAPI()
+
 class RequestModel(BaseModel):
-    market: str  # "US" or "MY"
+    market: str
 
 # ===============================
 # STOCK LIST
@@ -45,7 +42,7 @@ US_STOCKS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOG"]
 MY_STOCKS = ["1155.KL", "1023.KL", "5347.KL", "5225.KL", "6033.KL"]
 
 # ===============================
-# SAVE RESULT
+# SAVE TO DATABASE
 # ===============================
 def save_result(market, result):
     supabase.table("predictions").insert({
@@ -59,7 +56,6 @@ def save_result(market, result):
 # ===============================
 def run_model(stocks):
 
-    # ===== DATA =====
     data = yf.download(stocks, start="2020-01-01", auto_adjust=True)["Close"]
     data = data.ffill().dropna()
 
@@ -68,7 +64,7 @@ def run_model(stocks):
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(returns)
 
-    # ===== SEQUENCE =====
+    # sequence
     window = 60
     X, y = [], []
 
@@ -78,7 +74,7 @@ def run_model(stocks):
 
     X, y = np.array(X), np.array(y)
 
-    # ===== LSTM =====
+    # LSTM
     model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(X.shape[1], X.shape[2])),
         tf.keras.layers.LSTM(128, return_sequences=True),
@@ -88,20 +84,20 @@ def run_model(stocks):
     ])
 
     model.compile(optimizer='adam', loss='mse')
-    model.fit(X, y, epochs=15, batch_size=32, verbose=0)
+    model.fit(X, y, epochs=10, batch_size=32, verbose=0)
 
     # ===============================
-    # STABLE PREDICTION (ENSEMBLE)
+    # STABLE PREDICTION
     # ===============================
     predictions = []
     last_window = scaled[-60:]
 
-    for _ in range(5):  # ensemble runs
+    for _ in range(5):
         current = last_window.copy()
         future = []
 
         for _ in range(30):
-            pred = model.predict(current.reshape(1, 60, len(stocks)), verbose=0)
+            pred = model.predict(current.reshape(1,60,len(stocks)), verbose=0)
             future.append(pred[0])
             current = np.vstack((current[1:], pred))
 
@@ -111,29 +107,24 @@ def run_model(stocks):
     expected_returns = predictions.mean(axis=0)
 
     # ===============================
-    # STABLE PSO (MULTI RUN)
+    # STABLE PSO
     # ===============================
-    def optimize(selected_returns):
+    def optimize(sub_returns):
 
         def objective(w):
             w = np.array(w)
             w = w / np.sum(w)
 
-            ret = np.sum(selected_returns.mean() * w)
-            risk = np.sqrt(np.dot(w.T, np.dot(selected_returns.cov(), w)))
+            ret = np.sum(sub_returns.mean() * w)
+            risk = np.sqrt(np.dot(w.T, np.dot(sub_returns.cov(), w)))
 
             return -(ret / risk)
 
         results = []
 
-        for _ in range(5):  # multiple PSO runs
-            w, _ = pso(
-                objective,
-                [0]*len(stocks),
-                [1]*len(stocks),
-                swarmsize=50,
-                maxiter=100
-            )
+        for _ in range(5):
+            w, _ = pso(objective, [0]*len(stocks), [1]*len(stocks),
+                       swarmsize=50, maxiter=100)
             w = w / np.sum(w)
             results.append(w)
 
