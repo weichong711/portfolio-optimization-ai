@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
@@ -12,21 +12,15 @@ export default function Home() {
 
   const runPrediction = async (market) => {
     setLoading((prev) => ({ ...prev, [market]: true }));
-
     try {
       const res = await fetch(`${BACKEND_URL}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ market }),
       });
-
       const json = await res.json();
-
-      if (market === "US") {
-        setUsData(json);
-      } else {
-        setMyData(json);
-      }
+      if (market === "US") setUsData(json);
+      else setMyData(json);
     } catch (error) {
       alert(`Error: ${error.message}`);
     } finally {
@@ -84,7 +78,6 @@ export default function Home() {
               labelLine={false}
               label={(entry) => `${entry.name} (${entry.value}%)`}
               outerRadius={100}
-              fill="#8884d8"
               dataKey="value"
             >
               {pieData.map((entry, index) => (
@@ -158,10 +151,10 @@ export default function Home() {
 
       <footer style={styles.footer}>
         <p>
-          <strong>How it works:</strong> The system screens {40} US stocks and {25}{" "}
-          Malaysian stocks, selects the top 5 by historical Sharpe ratio, predicts future
-          returns using LSTM, and optimizes portfolio weights using Particle Swarm
-          Optimization (PSO) to maximize risk-adjusted returns.
+          <strong>How it works:</strong> The system screens 40 US stocks and 25 Malaysian
+          stocks, selects the top 5 by historical Sharpe ratio, predicts future returns
+          using LSTM, and optimizes portfolio weights using Particle Swarm Optimization
+          (PSO) to maximize risk-adjusted returns.
         </p>
       </footer>
     </div>
@@ -210,7 +203,6 @@ const styles = {
     backgroundColor: "#0070f3",
     color: "white",
     cursor: "pointer",
-    transition: "all 0.2s",
     boxShadow: "0 4px 12px rgba(0,112,243,0.3)",
   },
   results: {
@@ -275,12 +267,8 @@ const styles = {
     padding: "12px",
     borderBottom: "1px solid #eee",
   },
-  evenRow: {
-    backgroundColor: "#fafafa",
-  },
-  oddRow: {
-    backgroundColor: "white",
-  },
+  evenRow: { backgroundColor: "#fafafa" },
+  oddRow: { backgroundColor: "white" },
   footer: {
     marginTop: "40px",
     padding: "20px",
