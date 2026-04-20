@@ -1,7 +1,10 @@
 services:
   - type: web
-    name: portfolio-api
-    env: python
-    pythonVersion: "3.11.9"
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
+    name: portfolio-frontend
+    env: node
+    nodeVersion: "20.11.0"
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm start"
+    envVars:
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: https://portfolio-api.onrender.com
