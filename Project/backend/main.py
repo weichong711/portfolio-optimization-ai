@@ -50,19 +50,15 @@ class RequestModel(BaseModel):
 # We screen these to find the best 5
 # ===============================
 US_STOCK_POOL = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOG", "META", "TSLA", "BRK-B",
-    "JPM", "V", "UNH", "XOM", "JNJ", "WMT", "MA", "PG", "HD", "CVX",
-    "MRK", "ABBV", "LLY", "PEP", "KO", "AVGO", "COST", "TMO", "MCD",
-    "ACN", "CSCO", "ABT", "DHR", "NEE", "TXN", "ADBE", "CRM", "NFLX",
-    "AMD", "QCOM", "INTC", "IBM"
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOG", "META", "TSLA",
+    "JPM", "V", "UNH", "XOM", "JNJ", "WMT", "MA", "PG",
+    "MRK", "ABBV", "LLY", "AVGO", "COST"
 ]
 
 MY_STOCK_POOL = [
     "1155.KL", "1023.KL", "5347.KL", "5225.KL", "6033.KL",
     "1295.KL", "5183.KL", "6888.KL", "1082.KL", "4197.KL",
-    "5285.KL", "6947.KL", "5168.KL", "1066.KL", "2445.KL",
-    "5099.KL", "6012.KL", "3816.KL", "4863.KL", "5819.KL",
-    "1961.KL", "3182.KL", "5681.KL", "6076.KL", "2828.KL"
+    "5285.KL", "6947.KL", "5168.KL", "1066.KL", "2445.KL"
 ]
 
 # ===============================
@@ -85,27 +81,27 @@ CURRENCY = {
 # ===============================
 def screen_top_stocks(stock_pool, top_n=5):
     print(f"Screening {len(stock_pool)} stocks...")
-    scores = {}
+    try:
+        # Download all at once — much faster than one by one
+        data = yf.download(stock_pool, start="2022-01-01", auto_adjust=True, progress=False)["Close"]
+        if isinstance(data, pd.Series):
+            data = data.to_frame()
+        data = data.ffill().dropna()
+        returns = data.pct_change().dropna()
 
-    for ticker in stock_pool:
-        try:
-            data = yf.download(ticker, start="2020-01-01", auto_adjust=True, progress=False)["Close"]
-            if len(data) < 100:
-                continue
-            ret = data.pct_change().dropna()
-            mean_ret = ret.mean()
-            std_ret = ret.std()
-            if std_ret == 0:
-                continue
-            sharpe = mean_ret / std_ret
-            scores[ticker] = sharpe
-        except Exception:
-            continue
+        scores = {}
+        for ticker in returns.columns:
+            mean_ret = returns[ticker].mean()
+            std_ret = returns[ticker].std()
+            if std_ret > 0:
+                scores[ticker] = mean_ret / std_ret
 
-    # Sort by Sharpe ratio descending, pick top N
-    top = sorted(scores, key=scores.get, reverse=True)[:top_n]
-    print(f"Top {top_n} selected: {top}")
-    return top
+        top = sorted(scores, key=scores.get, reverse=True)[:top_n]
+        print(f"Top {top_n} selected: {top}")
+        return top
+    except Exception as e:
+        print(f"Screening failed: {e}, using defaults")
+        return stock_pool[:top_n]
 
 # ===============================
 # STEP 2: LSTM PREDICTION
@@ -140,16 +136,16 @@ def predict_returns(stocks):
     ])
 
     model.compile(optimizer="adam", loss="mse")
-    model.fit(X, y, epochs=5, batch_size=32, verbose=0)
+    model.fit(X, y, epochs=3, batch_size=32, verbose=0)
 
-    # Average over 3 runs for stability
+    # Average over 2 runs for stability
     predictions = []
     last_window = scaled[-60:]
 
-    for _ in range(3):
+    for _ in range(2):
         current = last_window.copy()
         future = []
-        for _ in range(30):
+        for _ in range(20):
             pred = model.predict(current.reshape(1, 60, len(stocks)), verbose=0)
             future.append(pred[0])
             current = np.vstack((current[1:], pred))
@@ -173,9 +169,9 @@ def optimize_weights(returns, stocks):
         return -(ret / risk)  # negative because PSO minimizes
 
     results = []
-    for _ in range(3):
+    for _ in range(2):
         w, _ = pso(objective, [0] * len(stocks), [1] * len(stocks),
-                   swarmsize=30, maxiter=50)
+                   swarmsize=20, maxiter=30)
         w = w / np.sum(w)
         results.append(w)
 
