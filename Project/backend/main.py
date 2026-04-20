@@ -53,9 +53,27 @@ def fetch_data(stocks):
     data = yf.download(stocks, start="2021-01-01", auto_adjust=True, progress=False)["Close"]
     if isinstance(data, pd.Series):
         data = data.to_frame(name=stocks[0])
-    data = data.ffill().dropna()
-    print(f"Data shape: {data.shape}")
-    return data
+
+    # Drop columns with too many missing values (>20%)
+    threshold = int(len(data) * 0.8)
+    data = data.dropna(thresh=threshold, axis=1)
+
+    # Forward fill then backward fill remaining gaps
+    data = data.ffill().bfill()
+
+    # Drop any remaining rows with NaN
+    data = data.dropna()
+
+    print(f"Data shape after cleaning: {data.shape}")
+
+    if data.empty or len(data) < 60:
+        raise ValueError(f"Not enough data after cleaning. Got {len(data)} rows, need at least 60.")
+
+    # Only keep stocks that have data
+    available_stocks = list(data.columns)
+    print(f"Available stocks: {available_stocks}")
+
+    return data, available_stocks
 
 # ===============================
 # STEP 2: LSTM PREDICTION
@@ -148,7 +166,10 @@ def run_pipeline(market):
     currency = CURRENCY[market]
 
     # 1. Fetch data
-    data = fetch_data(stocks)
+    data, available_stocks = fetch_data(stocks)
+
+    # Use only stocks that have data
+    stocks = available_stocks
 
     # 2. LSTM prediction
     returns, expected_returns = predict_returns(data, stocks)
